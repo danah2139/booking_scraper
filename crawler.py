@@ -4,9 +4,10 @@ import pycountry
 from scrapy.item import Item, Field
 from geojson import Feature, Point, FeatureCollection, dump
 import os
+# from link_genarator import CustomLinkExtractor
 import pipelines
 from scrapy.spiders import CrawlSpider, Rule
-from scrapy.linkextractors import LinkExtractor
+from scrapy.link import Link
 from scrapy.linkextractors.lxmlhtml import LxmlLinkExtractor
 # from scrapy import log
 
@@ -25,16 +26,27 @@ class LinkGenerator(LxmlLinkExtractor):
         hotels = json_response['b_hotels']
         all_links = []
         if(len(hotels) > 0):
-            bbox_list = self.get_list_of_bbox(response.url.split('BBOX=')[1])
+            bbox_list = get_list_of_bbox(response.url.split('BBOX=')[1])
             for bbox in bbox_list:
-                all_links.append(
-                    f'https://www.booking.com/markers_on_map?label=gen173nr-1DCAIoTTgBSDNYBGhqiAEBmAEOuAEZyAEM2AED6AEB-AECiAIBqAIDuAKQzeKXBsACAdICJGRkNzM4YTFlLTg5ZWYtNDAzMC04MzJjLTI3YTk5ZTk0YzAzNdgCBOACAQ&sid=5d1d00651882df1251e4de2b42a91f58&srpvid=48cf466b7a980027&;aid=304142;dest_type=country;sr_id=;ref=searchresults;limit=100;stype=1;lang=he;ssm=1;sech=1;ngp=1;room1=A,A;maps_opened=1;esf=1;sr_countrycode=fr;sr_lat=;sr_long=;dba=1;dbc=1;srh=;somp=1;mdimb=1%20;tp=1%20;img_size=270x200%20;avl=1%20;nor=1%20;spc=1%20;rmd=1%20;slpnd=1%20;sbr=1;at=1%20;sat=1%20;ssu=1;srocc=1;BBOX={bbox}')
+                all_links.append(Link(
+                    f'https://www.booking.com/markers_on_map?label=gen173nr-1DCAIoTTgBSDNYBGhqiAEBmAEOuAEZyAEM2AED6AEB-AECiAIBqAIDuAKQzeKXBsACAdICJGRkNzM4YTFlLTg5ZWYtNDAzMC04MzJjLTI3YTk5ZTk0YzAzNdgCBOACAQ&sid=5d1d00651882df1251e4de2b42a91f58&srpvid=48cf466b7a980027&;aid=304142;dest_type=country;sr_id=;ref=searchresults;limit=100;stype=1;lang=he;ssm=1;sech=1;ngp=1;room1=A,A;maps_opened=1;esf=1;sr_countrycode=fr;sr_lat=;sr_long=;dba=1;dbc=1;srh=;somp=1;mdimb=1%20;tp=1%20;img_size=270x200%20;avl=1%20;nor=1%20;spc=1%20;rmd=1%20;slpnd=1%20;sbr=1;at=1%20;sat=1%20;ssu=1;srocc=1;BBOX={bbox}'))
         return all_links
 
 
+def get_list_of_bbox(max_bbox):
+    [min_lon, min_lat, max_lon, max_lat] = max_bbox.split(',')
+    cent_lon = (float(min_lon) + float(max_lon))/2.0
+    cent_lat = (float(min_lat) + float(max_lat))/2.0
+
+    return [f'{min_lon},{min_lat},{cent_lon},{cent_lat}',
+            f'{cent_lon},{min_lat},{max_lon},{cent_lat}',
+            f'{min_lon},{cent_lat},{cent_lon},{max_lat}',
+            f'{cent_lon},{cent_lat},{max_lon},{max_lat}']
+
+
 class BookingSpider(CrawlSpider):
+    base_url = 'https://www.booking.com'
     name = 'booking'
-    base_url = 'http://www.booking.com'
     custom_settings = {"ITEM_PIPELINES": {'pipelines.customImagePipeline': 1},
                        "IMAGES_STORE": 'hotels_images'}
     headers = {
@@ -42,17 +54,17 @@ class BookingSpider(CrawlSpider):
         "Content-Type": "application/x-www-form-urlencoded"}
     features = []
 
-    rules = (Rule(LinkGenerator(), callback='parse_map'),)
+    rules = (Rule(LinkGenerator(allow='markers_on_map'), callback='parse_map'),)
 
     def start_requests(self):
-        yield scrapy.Request('https://www.booking.com/country/fr.html', callback=self.parse)
+        return [scrapy.Request('https://www.booking.com/country/fr.html', callback=self.parse_country)]
 
-    def parse(self, response):
+    def parse_country(self, response):
         max_bbox = response.xpath(
             '//script[contains(.,"b_map_google_bounding_box")]/text()').getall()[0].split(';')[1].split("= ")[1].replace("'", '')
         yield scrapy.Request(
             f'https://www.booking.com/markers_on_map?label=gen173nr-1DCAIoTTgBSDNYBGhqiAEBmAEOuAEZyAEM2AED6AEB-AECiAIBqAIDuAKQzeKXBsACAdICJGRkNzM4YTFlLTg5ZWYtNDAzMC04MzJjLTI3YTk5ZTk0YzAzNdgCBOACAQ&sid=5d1d00651882df1251e4de2b42a91f58&srpvid=48cf466b7a980027&;aid=304142;dest_type=country;sr_id=;ref=searchresults;limit=100;stype=1;lang=he;ssm=1;sech=1;ngp=1;room1=A,A;maps_opened=1;esf=1;sr_countrycode=fr;sr_lat=;sr_long=;dba=1;dbc=1;srh=;somp=1;mdimb=1%20;tp=1%20;img_size=270x200%20;avl=1%20;nor=1%20;spc=1%20;rmd=1%20;slpnd=1%20;sbr=1;at=1%20;sat=1%20;ssu=1;srocc=1;BBOX={max_bbox}',
-            headers=self.headers, callback=self.parse_map)
+            headers=self.headers)
 
         # return self.recursive_bbox_list(max_bbox)
 
@@ -65,24 +77,26 @@ class BookingSpider(CrawlSpider):
         #     dump(bbox, f, ensure_ascii=False)
         #     f.write('\n')
 
-    def recursive_bbox_list(self, max_bbox):
-        bbox_list = self.get_list_of_bbox(max_bbox)
-        print(max_bbox, 'bbox!!')
-        for bbox in bbox_list:
-            yield scrapy.Request(
-                f'https://www.booking.com/markers_on_map?label=gen173nr-1DCAIoTTgBSDNYBGhqiAEBmAEOuAEZyAEM2AED6AEB-AECiAIBqAIDuAKQzeKXBsACAdICJGRkNzM4YTFlLTg5ZWYtNDAzMC04MzJjLTI3YTk5ZTk0YzAzNdgCBOACAQ&sid=5d1d00651882df1251e4de2b42a91f58&srpvid=48cf466b7a980027&;aid=304142;dest_type=country;sr_id=;ref=searchresults;limit=100;stype=1;lang=he;ssm=1;sech=1;ngp=1;room1=A,A;maps_opened=1;esf=1;sr_countrycode=fr;sr_lat=;sr_long=;dba=1;dbc=1;srh=;somp=1;mdimb=1%20;tp=1%20;img_size=270x200%20;avl=1%20;nor=1%20;spc=1%20;rmd=1%20;slpnd=1%20;sbr=1;at=1%20;sat=1%20;ssu=1;srocc=1;BBOX={bbox}',
-                headers=self.headers, callback=self.parse_map)
-            yield from self.recursive_bbox_list(bbox)
+    # def recursive_bbox_list(self, max_bbox):
+    #     bbox_list = self.get_list_of_bbox(max_bbox)
+    #     print(max_bbox, 'bbox!!')
+    #     for bbox in bbox_list:
+    #         yield scrapy.Request(
+    #             f'https://www.booking.com/markers_on_map?label=gen173nr-1DCAIoTTgBSDNYBGhqiAEBmAEOuAEZyAEM2AED6AEB-AECiAIBqAIDuAKQzeKXBsACAdICJGRkNzM4YTFlLTg5ZWYtNDAzMC04MzJjLTI3YTk5ZTk0YzAzNdgCBOACAQ&sid=5d1d00651882df1251e4de2b42a91f58&srpvid=48cf466b7a980027&;aid=304142;dest_type=country;sr_id=;ref=searchresults;limit=100;stype=1;lang=he;ssm=1;sech=1;ngp=1;room1=A,A;maps_opened=1;esf=1;sr_countrycode=fr;sr_lat=;sr_long=;dba=1;dbc=1;srh=;somp=1;mdimb=1%20;tp=1%20;img_size=270x200%20;avl=1%20;nor=1%20;spc=1%20;rmd=1%20;slpnd=1%20;sbr=1;at=1%20;sat=1%20;ssu=1;srocc=1;BBOX={bbox}',
+    #             headers=self.headers, callback=self.parse_map)
+    #         yield from self.recursive_bbox_list(bbox)
 
-    def get_list_of_bbox(self, max_bbox):
-        [min_lon, min_lat, max_lon, max_lat] = max_bbox.split(',')
-        cent_lon = (float(min_lon) + float(max_lon))/2.0
-        cent_lat = (float(min_lat) + float(max_lat))/2.0
-
-        return [f'{min_lon},{min_lat},{cent_lon},{cent_lat}',
-                f'{cent_lon},{min_lat},{max_lon},{cent_lat}',
-                f'{min_lon},{cent_lat},{cent_lon},{max_lat}',
-                f'{cent_lon},{cent_lat},{max_lon},{max_lat}']
+    def _requests_to_follow(self, response):
+        # if not isinstance(response, HtmlResponse):
+        #     return
+        seen = set()
+        for rule_index, rule in enumerate(self._rules):
+            links = [lnk for lnk in rule.link_extractor.extract_links(response)
+                     if lnk not in seen]
+            for link in rule.process_links(links):
+                seen.add(link)
+                request = self._build_request(rule_index, link)
+                yield rule.process_request(request, response)
 
     def parse_map(self, response):
         json_response = json.loads(response.text)
@@ -166,10 +180,10 @@ class BookingSpider(CrawlSpider):
         except Exception as e:
             print(f'An exception occurred: {e}')
 
-    def closed(self, reason):
-        feature_collection = FeatureCollection(self.features)
-        with open(f'{country}.geojson', "w", encoding='utf8') as f:
-            dump(feature_collection, f, ensure_ascii=False)
+    # def closed(self, reason):
+    #     feature_collection = FeatureCollection(self.features)
+    #     with open(f'{country}.geojson', "w", encoding='utf8') as f:
+    #         dump(feature_collection, f, ensure_ascii=False)
 
 
 # class BookingSpider(CrawlSpider):
