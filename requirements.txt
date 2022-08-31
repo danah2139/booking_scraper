@@ -1,0 +1,6 @@
+country-bounding-boxes==0.2.3
+geojson==2.5.0
+Pillow==7.0.0
+pycountry==22.3.5
+Scrapy==2.6.1
+
