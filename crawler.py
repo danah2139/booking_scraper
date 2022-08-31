@@ -14,13 +14,12 @@ base_url = 'https://www.booking.com'
 markers_on_map_url = base_url+'/markers_on_map?aid=304142&aid=304142&label=gen173nr-1DCAQoggJCDXNlYXJjaF9pc3JhZWxICVgEaGqIAQGYAQm4ARnIAQzYAQPoAQH4AQaIAgGoAgO4Ap3crZgGwAIB0gIkMWM5YzQ2ZTktMWVkZS00Y2E4LTlhMWYtZmU0MmNmMjkyNGMx2AIE4AIB&sid=5d1d00651882df1251e4de2b42a91f58&srpvid=47f45f0e5e5301fc&dest_id=103&dest_type=&sr_id=&ref=searchresults&limit=100&stype=1&lang=en-gb&ssm=1&sech=1&ngp=1&room1=A%2CA&maps_opened=1&esf=1&nflt=ht_id%3D204&sr_countrycode=il&sr_lat=&sr_long=&dba=1&dbc=1&srh=3626681%2C7917430%2C8245116%2C8263881%2C1309762%2C8950327%2C8698987%2C3564377%2C6960843%2C8289428%2C8156848%2C6959499%2C8601421%2C8950938%2C7177203%2C8445244&somp=1&mdimb=1%20&tp=1%20&img_size=270x200%20&avl=1%20&nor=1%20&spc=1%20&rmd=1%20&slpnd=1%20&sbr=1&at=1%20&sat=1%20&ssu=1&srocc=1;BBOX='
 
 
-# pycountry.countries.get(name='American Samoa').alpha_2
 class LinkGenerator(LxmlLinkExtractor):
     def extract_links(self, response):
         json_response = json.loads(response.text)
         hotels = json_response['b_hotels']
         all_links = []
-        if(len(hotels) > 0):
+        if(len(hotels) > 1):
             bbox_list = get_list_of_bbox(response.url.split('BBOX=')[1])
             for bbox in bbox_list:
                 all_links.append(Link(markers_on_map_url+bbox))
@@ -44,8 +43,7 @@ def get_list_of_bbox(max_bbox):
 class BookingSpider(CrawlSpider):
     name = 'booking'
     custom_settings = {"ITEM_PIPELINES": {'pipelines.customImagePipeline': 1},
-                       "IMAGES_STORE": 'hotels_images', 'LOG_LEVEL': 'INFO', 'CONCURRENT_REQUESTS': 1000,
-                       'CONCURRENT_REQUESTS_PER_DOMAIN': 800, 'DOWNLOAD_DELAY': 0.1}
+                       "IMAGES_STORE": 'hotels_images', 'LOG_LEVEL': 'INFO'}
     user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36'
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36',
@@ -57,17 +55,9 @@ class BookingSpider(CrawlSpider):
                   callback='parse_map', follow=True),)
 
     def start_requests(self):
-        # return [scrapy.Request(base_url+'/country/il.html', callback=self.parse_country, headers=self.headers)]
         max_bbox = [c.bbox for c in country_subunits_by_iso_code('il')]
         max_bbox = str(max_bbox)[2:-2].replace(' ', '')
         yield scrapy.Request(markers_on_map_url+max_bbox, headers=self.headers)
-
-    # def parse_country(self, response):
-    #     # max_bbox = response.xpath(
-    #     #     '//script[contains(.,"b_map_google_bounding_box")]/text()').getall()[0].split(';')[1].split("= ")[1].replace("'", '')
-    #     max_bbox = [c.bbox for c in country_subunits_by_iso_code('il')]
-    #     max_bbox = str(max_bbox)[2:-2].replace(' ', '')
-    #     yield scrapy.Request(markers_on_map_url+max_bbox, headers=self.headers)
 
     def _requests_to_follow(self, response):
         """
@@ -93,16 +83,10 @@ class BookingSpider(CrawlSpider):
             if(link_hotel.split('hotel/')[1][0:2] != 'il'):
                 return
             hotel_url = base_url + link_hotel
-            # with open(f'{country}.txt', "a", encoding='utf8') as f:
-            #     f.write(hotel_url)
-            #     f.write('\n')
             yield scrapy.Request(hotel_url, self.pasre_hotel)
 
     def pasre_hotel(self, hotel):
         try:
-            # with open('country.txt', "a", encoding='utf8') as f:
-            #     f.write(hotel.url)
-            #     f.write('\n')
             self.count_hotels += 1
             self.logger.info('hotel number: %s hotel url: %s', self.count_hotels, hotel.url)
             properties = {}
